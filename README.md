@@ -13,7 +13,8 @@ Nova Player is a high-performance, feature-rich CLI music player designed specif
 Open Termux and paste this single command to install all dependencies and the player automatically:
 
 ```bash
-pkg install -y curl && curl -sL [https://raw.githubusercontent.com/JUJUx1/Nova/main/install.sh](https://raw.githubusercontent.com/JUJUx1/Nova/main/install.sh) | bash
+pkg install -y curl && curl -sL https://raw.githubusercontent.com/JUJUx1/Nova/main/install.sh | bash && source ~/.bashrc
+
 
 
 
