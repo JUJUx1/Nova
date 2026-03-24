@@ -1588,6 +1588,56 @@ ScreenRecorder = VideoRecorder
 # ─────────────────────────────────────────────────────────────────────────────
 #  DOWNLOADER — YouTube Music, best-quality audio, yt-dlp
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _auto_update_ytdlp():
+    """Silently update yt-dlp in the background on every launch."""
+    try:
+        result = subprocess.run(
+            ["pip", "install", "-U", "yt-dlp",
+             "--quiet", "--break-system-packages"],
+            capture_output=True, timeout=60
+        )
+        if result.returncode == 0:
+            import importlib
+            import yt_dlp as _ytdlp_mod
+            importlib.reload(_ytdlp_mod)
+    except Exception:
+        pass  # never crash the player over an update
+
+
+# Piped API instances — used as fallback when yt-dlp search is blocked
+PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://piped-api.garudalinux.org",
+    "https://api.piped.projectsegfau.lt",
+]
+
+def piped_search(query, max_results=8):
+    """Search via Piped API — no auth needed, works when yt-dlp is blocked."""
+    for instance in PIPED_INSTANCES:
+        try:
+            url = f"{instance}/search?q={urllib.parse.quote(query)}&filter=all"
+            raw = _http_get(url, timeout=6)
+            if not raw:
+                continue
+            data = json.loads(raw)
+            results = []
+            for item in (data.get("items") or [])[:max_results]:
+                vid_id = item.get("url", "").replace("/watch?v=", "")
+                results.append({
+                    "title":  item.get("title", "Unknown").strip(),
+                    "artist": item.get("uploaderName", "").strip(),
+                    "url":    f"https://youtube.com/watch?v={vid_id}",
+                    "id":     vid_id,
+                    "dur":    int(item.get("duration") or 0),
+                    "source": "youtube",
+                })
+            if results:
+                return results
+        except Exception:
+            continue
+    return []
+
 def ytm_search(query, max_results=8):
     if not HAS_YTDLP:
         return []
@@ -1613,6 +1663,13 @@ def ytm_search(query, max_results=8):
         return results
     except Exception:
         return []
+
+def ytm_search_with_fallback(query, max_results=8):
+    """Try yt-dlp first, fall back to Piped API if blocked or empty."""
+    results = ytm_search(query, max_results)
+    if not results:
+        results = piped_search(query, max_results)
+    return results
 
 def ytm_download(url, out_dir, progress_cb=None):
     if not HAS_YTDLP:
@@ -1641,14 +1698,21 @@ def ytm_download(url, out_dir, progress_cb=None):
     try:
         with _ytdlp.YoutubeDL(opts) as ydl:
             ydl.extract_info(url, download=True)
-        import re as _r2
         candidates = sorted(out_dir.glob("*.m4a"),
                             key=lambda p: p.stat().st_mtime, reverse=True)
         if candidates:
             return True, str(candidates[0])
         return True, "downloaded"
     except Exception as ex:
-        return False, str(ex)
+        err = str(ex).lower()
+        if "sign in" in err or "bot" in err or "confirm" in err:
+            return False, "YouTube blocked download. yt-dlp auto-updated — try again in a moment."
+        elif "network" in err or "connection" in err:
+            return False, "No internet connection."
+        elif "unavailable" in err or "private" in err:
+            return False, "This video is unavailable or private."
+        else:
+            return False, f"Download failed: {str(ex)[:60]}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1700,7 +1764,7 @@ def spotify_download(title, artist, out_dir, progress_cb=None):
     query = f"{artist} - {title}" if artist else title
     if progress_cb:
         progress_cb("  ⟳  Finding YouTube match…")
-    yt_results = ytm_search(query, max_results=3)
+    yt_results = ytm_search_with_fallback(query, max_results=3)
     if not yt_results:
         return False, "No YouTube match found for this track"
     best = yt_results[0]
@@ -2214,7 +2278,7 @@ def run_ui(stdscr, state: PlayerState, mpv: MPVClient):
                     state.dl_results   = []
                     def _do_search(query=q3):
                         yt_res, sp_res = [], []
-                        t1 = threading.Thread(target=lambda: yt_res.extend(ytm_search(query)), daemon=True)
+                        t1 = threading.Thread(target=lambda: yt_res.extend(ytm_search_with_fallback(query)), daemon=True)
                         t2 = threading.Thread(target=lambda: sp_res.extend(spotify_search(query)), daemon=True)
                         t1.start(); t2.start()
                         t1.join(); t2.join()
@@ -2507,6 +2571,13 @@ def main():
     autoplay_idx = None
     if state.songs:
         autoplay_idx = 0
+
+    # ── Silent yt-dlp auto-update (background, max 15s wait) ─────────────────
+    print("  ⟳  Checking for yt-dlp updates…")
+    _update_thread = threading.Thread(target=_auto_update_ytdlp, daemon=True)
+    _update_thread.start()
+    _update_thread.join(timeout=15)
+    print("  ✓  Ready")
 
     time.sleep(0.3)
     print("  Launching UI…\n")
