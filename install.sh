@@ -10,48 +10,59 @@ GRN='\033[92m'
 RED='\033[91m'
 RST='\033[0m'
 
-echo -e "${CYAN}Starting Nova Player Installation...${RST}"
+echo ""
+echo -e "${CYAN}  ███╗  ██╗ ██████╗ ██╗   ██╗ █████╗ ${RST}"
+echo -e "${MAG}  ████╗ ██║██╔═══██╗██║   ██║██╔══██╗${RST}"
+echo -e "${CYAN}  ██╔██╗██║██║   ██║╚██╗ ██╔╝███████║${RST}"
+echo -e "${MAG}  ██║╚████║╚██████╔╝  ╚███╔╝ ██║  ██║${RST}"
+echo -e "${YEL}  ╚═╝ ╚═══╝ ╚═════╝    ╚══╝  ╚═╝  ╚═╝${RST}"
+echo ""
+echo -e "  ${YEL}Nova Player Installer${RST}  —  Termux Music CLI"
+echo ""
 
-# 1. Update Packages
-echo -e "  ${CYAN}[1/6]${RST} Updating system packages..."
-pkg update -y && pkg upgrade -y
+# 1. Update and Install System Dependencies
+# Added ffmpeg for video recording and termux-api for system integration
+echo -e "  ${CYAN}[1/5]${RST} Installing system packages (mpv, ffmpeg)..."
+pkg update -y && pkg install -y python mpv ffmpeg termux-api curl
 
-# 2. Install System Dependencies
-# mpv is required for playback, ffmpeg for recording
-echo -e "  ${CYAN}[2/6]${RST} Installing mpv and ffmpeg..."
-pkg install -y python mpv ffmpeg termux-api
-
-# 3. Install Python Libraries
-# Installing core and optional dependencies found in nova_player.py
-echo -e "  ${CYAN}[3/6]${RST} Installing Python libraries (this may take a minute)..."
+# 2. Install Python Libraries
+# Includes yt-dlp for downloading and Pillow for the visualizer
+echo -e "  ${CYAN}[2/5]${RST} Installing Python libraries..."
 pip install --upgrade pip
 pip install mutagen requests Pillow yt-dlp spotipy indic-transliteration
 
-# 4. Setup Storage
-# Required so the player can access your Music and Downloads folders
-echo -e "  ${CYAN}[4/6]${RST} Setting up storage access..."
+# 3. Setup Storage
+# Ensures the player can access the phone's storage
+echo -e "  ${CYAN}[3/5]${RST} Requesting storage access..."
 termux-setup-storage
 sleep 2
 
-# 5. Create Songs Directory
+# 4. Create Songs Directory
+# Matches the paths expected by the player
 SONGS_DIR="$HOME/storage/downloads/songs"
 mkdir -p "$SONGS_DIR"
-echo -e "  ${GRN}✓${RST} Songs directory ready: ${YEL}$SONGS_DIR${RST}"
+echo -e "  ${GRN}✓${RST}  Songs folder ready: ${YEL}${SONGS_DIR}${RST}"
 
-# 6. Install Script and Create Alias
-# Moves the player to home and creates the 'nova' command
+# 5. Download & Install Player Script
+# If the user is using the one-liner, we fetch the script from your repo
+SCRIPT_DEST="$HOME/nova_player.py"
+echo -e "  ${CYAN}[4/5]${RST} Downloading Nova Player..."
+
 if [ -f "./nova_player.py" ]; then
-    cp ./nova_player.py "$HOME/nova_player.py"
-    chmod +x "$HOME/nova_player.py"
-    
-    # Add alias to .bashrc if it doesn't exist
-    if ! grep -q "alias nova=" "$HOME/.bashrc"; then
-        echo 'alias nova="python $HOME/nova_player.py"' >> "$HOME/.bashrc"
-    fi
-    echo -e "  ${GRN}✓${RST} Player installed. Use ${CYAN}nova${RST} to start."
+    cp ./nova_player.py "$SCRIPT_DEST"
 else
-    echo -e "  ${RED}✗ Error: nova_player.py not found in current directory.${RST}"
+    curl -sL "https://raw.githubusercontent.com/JUJUx1/Nova/main/nova_player.py" -o "$SCRIPT_DEST"
+fi
+chmod +x "$SCRIPT_DEST"
+
+# 6. Add Command Alias
+RC="$HOME/.bashrc"
+if ! grep -q "alias nova=" "$RC" 2>/dev/null; then
+  echo 'alias nova="python $HOME/nova_player.py"' >> "$RC"
+  echo -e "  ${GRN}✓${RST}  Alias ${CYAN}nova${RST} added"
 fi
 
-echo -e "\n${GRN}Installation Complete!${RST}"
-echo -e "Restart Termux or run ${YEL}source ~/.bashrc${RST} to use the ${CYAN}nova${RST} command."
+echo ""
+echo -e "${GRN}Installation Complete!${RST}"
+echo -e "Restart Termux or run: ${YEL}source ~/.bashrc${RST}"
+echo -e "Then type ${CYAN}nova${RST} to start playing."
